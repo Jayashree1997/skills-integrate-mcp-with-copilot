@@ -2,7 +2,97 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitiesList = document.getElementById("activities-list");
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
+  const signupContainer = document.getElementById("signup-container");
   const messageDiv = document.getElementById("message");
+  
+  // Auth elements
+  const authButton = document.getElementById("auth-button");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const loginMessage = document.getElementById("login-message");
+  const closeBtn = document.querySelector(".close");
+
+  // Store current auth state
+  let currentUser = localStorage.getItem("teacher_username") || null;
+
+  // Handle login modal
+  authButton.addEventListener("click", () => {
+    if (currentUser) {
+      logout();
+    } else {
+      loginModal.classList.remove("hidden");
+    }
+  });
+
+  closeBtn.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+  });
+
+  window.addEventListener("click", (event) => {
+    if (event.target === loginModal) {
+      loginModal.classList.add("hidden");
+    }
+  });
+
+  // Handle login form submission
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    
+    const username = document.getElementById("login-username").value;
+    const password = document.getElementById("login-password").value;
+
+    try {
+      const response = await fetch(
+        `/auth/login?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
+        { method: "POST" }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        currentUser = username;
+        localStorage.setItem("teacher_username", username);
+        
+        loginMessage.textContent = "Login successful!";
+        loginMessage.className = "success";
+        loginMessage.classList.remove("hidden");
+        
+        loginForm.reset();
+        loginModal.classList.add("hidden");
+        
+        updateAuthUI();
+        signupContainer.classList.remove("hidden");
+        
+        setTimeout(() => {
+          loginMessage.classList.add("hidden");
+        }, 3000);
+      } else {
+        const error = await response.json();
+        loginMessage.textContent = error.detail || "Login failed";
+        loginMessage.className = "error";
+        loginMessage.classList.remove("hidden");
+      }
+    } catch (error) {
+      loginMessage.textContent = "Login error. Please try again.";
+      loginMessage.className = "error";
+      loginMessage.classList.remove("hidden");
+      console.error("Error logging in:", error);
+    }
+  });
+
+  function logout() {
+    currentUser = null;
+    localStorage.removeItem("teacher_username");
+    signupContainer.classList.add("hidden");
+    updateAuthUI();
+  }
+
+  function updateAuthUI() {
+    if (currentUser) {
+      authButton.textContent = `👤 ${currentUser} (Logout)`;
+    } else {
+      authButton.textContent = "👤 Login";
+    }
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -73,11 +163,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const activity = button.getAttribute("data-activity");
     const email = button.getAttribute("data-email");
 
+    if (!currentUser) {
+      messageDiv.textContent = "Teacher login required to unregister students";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      return;
+    }
+
     try {
       const response = await fetch(
         `/activities/${encodeURIComponent(
           activity
-        )}/unregister?email=${encodeURIComponent(email)}`,
+        )}/unregister?email=${encodeURIComponent(email)}&username=${encodeURIComponent(currentUser)}`,
         {
           method: "DELETE",
         }
@@ -114,6 +211,13 @@ document.addEventListener("DOMContentLoaded", () => {
   signupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
+    if (!currentUser) {
+      messageDiv.textContent = "Teacher login required to register students";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      return;
+    }
+
     const email = document.getElementById("email").value;
     const activity = document.getElementById("activity").value;
 
@@ -121,7 +225,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const response = await fetch(
         `/activities/${encodeURIComponent(
           activity
-        )}/signup?email=${encodeURIComponent(email)}`,
+        )}/signup?email=${encodeURIComponent(email)}&username=${encodeURIComponent(currentUser)}`,
         {
           method: "POST",
         }
@@ -156,5 +260,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Initialize app
+  updateAuthUI();
+  if (currentUser) {
+    signupContainer.classList.remove("hidden");
+  }
   fetchActivities();
 });
