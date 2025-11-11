@@ -9,7 +9,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
+import json
 from pathlib import Path
+from typing import Dict
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -18,6 +20,16 @@ app = FastAPI(title="Mergington High School API",
 current_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
+
+# Load teacher credentials from JSON file
+def load_teachers() -> Dict:
+    """Load teacher credentials from teachers.json"""
+    teachers_file = os.path.join(Path(__file__).parent, "teachers.json")
+    try:
+        with open(teachers_file, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"teachers": []}
 
 # In-memory activity database
 activities = {
@@ -83,14 +95,66 @@ def root():
     return RedirectResponse(url="/static/index.html")
 
 
+@app.post("/auth/login")
+def login(username: str, password: str):
+    """Authenticate a teacher with username and password"""
+    teachers_data = load_teachers()
+    
+    for teacher in teachers_data.get("teachers", []):
+        if teacher["username"] == username and teacher["password"] == password:
+            return {"message": "Login successful", "username": username, "authenticated": True}
+    
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid username or password"
+    )
+
+
+@app.get("/auth/verify")
+def verify_auth(username: str):
+    """Verify if a username exists in the teacher list"""
+    teachers_data = load_teachers()
+    
+    for teacher in teachers_data.get("teachers", []):
+        if teacher["username"] == username:
+            return {"authenticated": True, "username": username}
+    
+    return {"authenticated": False}
+
+
+@app.get("/")
+def root():
+    return RedirectResponse(url="/static/index.html")
+
+
 @app.get("/activities")
 def get_activities():
     return activities
 
 
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
-    """Sign up a student for an activity"""
+def signup_for_activity(activity_name: str, email: str, username: str = None):
+    """Sign up a student for an activity (teacher only)"""
+    # Check if teacher is authenticated
+    if not username:
+        raise HTTPException(
+            status_code=401,
+            detail="Teacher authentication required"
+        )
+    
+    teachers_data = load_teachers()
+    teacher_found = False
+    for teacher in teachers_data.get("teachers", []):
+        if teacher["username"] == username:
+            teacher_found = True
+            break
+    
+    if not teacher_found:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid teacher credentials"
+        )
+    
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
@@ -111,8 +175,28 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
-    """Unregister a student from an activity"""
+def unregister_from_activity(activity_name: str, email: str, username: str = None):
+    """Unregister a student from an activity (teacher only)"""
+    # Check if teacher is authenticated
+    if not username:
+        raise HTTPException(
+            status_code=401,
+            detail="Teacher authentication required"
+        )
+    
+    teachers_data = load_teachers()
+    teacher_found = False
+    for teacher in teachers_data.get("teachers", []):
+        if teacher["username"] == username:
+            teacher_found = True
+            break
+    
+    if not teacher_found:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid teacher credentials"
+        )
+    
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
